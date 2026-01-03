@@ -111,6 +111,14 @@ const runMigrations = (currentVersion: number) => {
     return version;
 };
 
+// Define explicit type for migration logs
+interface MigrationLog {
+    date: string;
+    from: number;
+    to: number;
+    status: string;
+}
+
 export const initializeDatabase = () => {
     const currentVersion = getStoredItem(STORAGE_KEYS.DB_VERSION, 0);
 
@@ -119,7 +127,8 @@ export const initializeDatabase = () => {
         const newVersion = runMigrations(currentVersion);
         localStorage.setItem(STORAGE_KEYS.DB_VERSION, JSON.stringify(newVersion));
         
-        const logs = getStoredItem(STORAGE_KEYS.MIGRATION_LOG, []);
+        // Pass the generic type to getStoredItem so TS knows it's an array of objects, not never[]
+        const logs = getStoredItem<MigrationLog[]>(STORAGE_KEYS.MIGRATION_LOG, []);
         logs.push({ date: new Date().toISOString(), from: currentVersion, to: newVersion, status: 'SUCCESS' });
         localStorage.setItem(STORAGE_KEYS.MIGRATION_LOG, JSON.stringify(logs));
     }
