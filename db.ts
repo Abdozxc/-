@@ -127,8 +127,8 @@ export const initializeDatabase = () => {
         const newVersion = runMigrations(currentVersion);
         localStorage.setItem(STORAGE_KEYS.DB_VERSION, JSON.stringify(newVersion));
         
-        // Fix: Cast empty array to MigrationLog[] to prevent 'never[]' inference error
-        const logs = getStoredItem(STORAGE_KEYS.MIGRATION_LOG, [] as MigrationLog[]);
+        // Fix: Use generic type parameter <MigrationLog[]> instead of type assertion to prevent 'never' error
+        const logs = getStoredItem<MigrationLog[]>(STORAGE_KEYS.MIGRATION_LOG, []);
         logs.push({ date: new Date().toISOString(), from: currentVersion, to: newVersion, status: 'SUCCESS' });
         localStorage.setItem(STORAGE_KEYS.MIGRATION_LOG, JSON.stringify(logs));
     }
