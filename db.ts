@@ -43,7 +43,7 @@ export const EmployeeService = {
         const employees = EmployeeService.getAll();
         const newEmployee: Employee = {
             ...employee,
-            id: Date.now().toString(), // Use uuidv4() when package is available
+            id: uuidv4(), 
         };
         const updated = [...employees, newEmployee];
         localStorage.setItem(STORAGE_KEYS.EMPLOYEES, JSON.stringify(updated));
@@ -127,8 +127,8 @@ export const initializeDatabase = () => {
         const newVersion = runMigrations(currentVersion);
         localStorage.setItem(STORAGE_KEYS.DB_VERSION, JSON.stringify(newVersion));
         
-        // Pass the generic type to getStoredItem so TS knows it's an array of objects, not never[]
-        const logs = getStoredItem<MigrationLog[]>(STORAGE_KEYS.MIGRATION_LOG, []);
+        // Fix: Cast empty array to MigrationLog[] to prevent 'never[]' inference error
+        const logs = getStoredItem(STORAGE_KEYS.MIGRATION_LOG, [] as MigrationLog[]);
         logs.push({ date: new Date().toISOString(), from: currentVersion, to: newVersion, status: 'SUCCESS' });
         localStorage.setItem(STORAGE_KEYS.MIGRATION_LOG, JSON.stringify(logs));
     }
