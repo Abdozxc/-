@@ -6,14 +6,13 @@
 
 body {
   font-family: 'Tajawal', sans-serif;
-  /* Smooth transition for dark mode */
   transition: background-color 0.3s ease, color 0.3s ease;
 }
 
 /* Dark Mode Base Styles */
 html.dark body {
-  background-color: #0f172a; /* slate-900 */
-  color: #f8fafc; /* slate-50 */
+  background-color: #0f172a;
+  color: #f8fafc;
 }
 
 /* Custom Scrollbar */
@@ -42,7 +41,6 @@ html.dark body {
 @media print {
   @page {
     size: A4 landscape;
-    /* CRITICAL: margin 0 hides browser headers/footers like 'Google AI Studio', URL, etc. */
     margin: 0; 
   }
   body {
@@ -50,15 +48,12 @@ html.dark body {
     color: black !important;
     -webkit-print-color-adjust: exact;
     print-color-adjust: exact;
-    /* Add padding inside body to compensate for @page margin: 0 */
     padding: 10mm !important; 
-    /* Scale down slightly to ensure table fits within A4 margins without cutting off */
     zoom: 0.95; 
     width: 100% !important;
     max-width: 100% !important;
     overflow-x: hidden !important;
   }
-  /* Ensure dark mode doesn't affect print */
   html.dark body {
       background-color: white !important;
       color: black !important;
@@ -69,11 +64,9 @@ html.dark body {
       border: 1px solid #ddd;
   }
   
-  /* Hide UI elements */
   aside, header, .no-print, button {
     display: none !important;
   }
-  /* Reset layout for print */
   #root, #root > div {
     display: block !important;
     height: auto !important;
@@ -86,13 +79,11 @@ html.dark body {
     overflow: visible !important;
     display: block !important;
   }
-  /* Allow content to flow */
   main > div {
     overflow: visible !important;
     padding: 0 !important;
     margin: 0 !important;
   }
-  /* Ensure table visibility */
   table {
     width: 100% !important;
     border-collapse: collapse;
@@ -101,7 +92,6 @@ html.dark body {
     border: 1px solid #e2e8f0;
     color: black !important;
   }
-  /* Specific fix for shadow/borders */
   .shadow-sm, .shadow-md, .shadow-lg {
     box-shadow: none !important;
   }
