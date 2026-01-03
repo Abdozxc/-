@@ -1,13 +1,20 @@
+export type UserRole = 'general_manager' | 'owner' | 'manager' | 'accountant' | 'employee';
+
 export interface Employee {
   id: string;
   name: string;
+  email: string; // Made required for login
+  password?: string; // Optional for security (in real app, use hash)
+  role: UserRole;
   position: string;
   department: string;
   joinDate: string;
   avatar: string;
 }
 
-export type AttendanceStatus = 'present' | 'absent' | 'late' | 'weekend' | 'leave' | 'absent_penalty';
+export type AttendanceStatus = 'present' | 'absent' | 'late' | 'weekend' | 'leave' | 'absent_penalty' | 'under_review';
+
+export type RecordSource = 'manual' | 'device' | 'app';
 
 export interface AttendanceRecord {
   id: string;
@@ -17,19 +24,22 @@ export interface AttendanceRecord {
   checkOut?: string; // HH:mm format (24h internally)
   status: AttendanceStatus;
   note?: string;
+  source?: RecordSource; // New field for device integration
+  earlyDeparturePermission?: boolean; // New: If true, early departure is not deducted from overtime
 }
 
 export interface DailyStats {
   record: AttendanceRecord | null;
   date: string;
   isFriday: boolean;
-  isOfficialHoliday: boolean; // New field
+  isOfficialHoliday: boolean;
   delayMinutes: number;
   overtimeMinutes: number;
-  netOvertimeMinutes: number; // The calculated final overtime
+  netOvertimeMinutes: number;
   workingHours: number;
   statusLabel: string;
   colorClass: string;
+  earlyDepartureMinutes?: number; // Added for UI display
 }
 
 export interface EmployeeScore {
@@ -38,32 +48,39 @@ export interface EmployeeScore {
   avatar: string;
   position: string;
   score: number;
-  commitmentScore: number; // 50%
-  overtimeScore: number; // 30%
-  absenceScore: number; // 20%
+  commitmentScore: number;
+  overtimeScore: number;
+  absenceScore: number;
   totalNetOvertime: number;
-  totalRawOvertime: number; // Total overtime before deduction
+  totalRawOvertime: number;
   totalDelay: number;
   rank: number;
-  unexcusedAbsences: number; // Count of penalty absences
-  penaltyPoints: number; // Total points deducted
+  unexcusedAbsences: number;
+  penaltyPoints: number;
+  pointsToNextRank?: number; // Gamification
+  pointsToFirst?: number;   // Gamification
 }
 
 export interface Holiday {
   id: string;
   name: string;
-  startDate: string; // YYYY-MM-DD
-  endDate: string;   // YYYY-MM-DD
+  startDate: string;
+  endDate: string;
 }
 
 export interface AppConfig {
   workStartTime: string;
   workEndTime: string;
+  gracePeriodMinutes: number; // Added Grace Period
   weightCommitment: number;
   weightOvertime: number;
   weightAbsence: number;
-  penaltyValue: number; // Points to deduct per unexcused absence
+  penaltyValue: number;
   holidays: Holiday[];
 }
 
-export type UserRole = 'manager' | 'accountant' | 'employee';
+export interface SupabaseConfig {
+    projectUrl: string;
+    apiKey: string;
+    isConnected: boolean;
+}
