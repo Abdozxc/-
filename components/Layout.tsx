@@ -1,5 +1,6 @@
+
 import React from 'react';
-import { LayoutDashboard, Users, FileText, Settings, LogOut, Menu, UserCog, Moon, Sun, Fingerprint } from 'lucide-react';
+import { LayoutDashboard, Users, FileText, Settings, LogOut, Menu, UserCog, Moon, Sun, Fingerprint, History } from 'lucide-react';
 import { UserRole } from '../types';
 import { Permissions } from '../utils';
 
@@ -24,6 +25,7 @@ const Layout: React.FC<LayoutProps> = ({ children, activeTab, onTabChange, userR
     { id: 'biometric', label: 'جهاز البصمة (Live)', icon: Fingerprint, visible: Permissions.canAccessBiometricDevice(userRole) },
     { id: 'reports', label: 'التقارير', icon: FileText, visible: true },
     { id: 'users', label: 'إدارة المستخدمين', icon: UserCog, visible: Permissions.canManageUsers(userRole) },
+    { id: 'logs', label: 'سجل الحركات', icon: History, visible: Permissions.canViewLogs(userRole) },
     { id: 'settings', label: 'الإعدادات', icon: Settings, visible: Permissions.canManageSettings(userRole) },
   ];
 

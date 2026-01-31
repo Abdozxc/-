@@ -1,3 +1,4 @@
+
 import { AttendanceRecord, DailyStats, Employee, EmployeeScore, AppConfig, UserRole } from './types';
 
 // Permissions Logic
@@ -23,6 +24,9 @@ export const Permissions = {
     // New Permission: Biometric Device is visible to everyone EXCEPT the Owner
     // Employees need it to punch in/out (simulator), Managers need it to monitor.
     canAccessBiometricDevice: (role: UserRole) => role !== 'owner',
+
+    // Logs: Only Owner and General Manager
+    canViewLogs: (role: UserRole) => role === 'general_manager' || role === 'owner',
 };
 
 const timeToMinutes = (time: string): number => {
@@ -42,6 +46,22 @@ export const formatTime12H = (time24?: string): string => {
   const suffix = h >= 12 ? 'PM' : 'AM';
   const h12 = h % 12 || 12;
   return `${h12}:${m.toString().padStart(2, '0')} ${suffix}`;
+};
+
+// --- GEOLOCATION UTILS ---
+export const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: number): number => {
+    const R = 6371e3; // Earth radius in meters
+    const φ1 = lat1 * Math.PI / 180; // φ, λ in radians
+    const φ2 = lat2 * Math.PI / 180;
+    const Δφ = (lat2 - lat1) * Math.PI / 180;
+    const Δλ = (lon2 - lon1) * Math.PI / 180;
+
+    const a = Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
+              Math.cos(φ1) * Math.cos(φ2) *
+              Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+
+    return Math.round(R * c); // Distance in meters
 };
 
 const checkIsHoliday = (dateStr: string, config: AppConfig): boolean => {

@@ -1,3 +1,4 @@
+
 export type UserRole = 'general_manager' | 'owner' | 'manager' | 'accountant' | 'employee';
 
 export interface Employee {
@@ -26,6 +27,12 @@ export interface AttendanceRecord {
   note?: string;
   source?: RecordSource; // New field for device integration
   earlyDeparturePermission?: boolean; // New: If true, early departure is not deducted from overtime
+  location?: {
+      lat: number;
+      lng: number;
+      inRange: boolean;
+      distance: number;
+  };
 }
 
 export interface DailyStats {
@@ -77,10 +84,27 @@ export interface AppConfig {
   weightAbsence: number;
   penaltyValue: number;
   holidays: Holiday[];
+  // Location Settings
+  locationEnabled: boolean;
+  companyLat: number;
+  companyLng: number;
+  allowedRadiusMeters: number;
 }
 
 export interface SupabaseConfig {
     projectUrl: string;
     apiKey: string;
     isConnected: boolean;
+}
+
+export type ActionType = 'LOGIN' | 'LOGOUT' | 'CREATE' | 'UPDATE' | 'DELETE' | 'SETTINGS' | 'ATTENDANCE';
+
+export interface ActivityLog {
+    id: string;
+    actorName: string; // Name of user who performed action
+    actorRole: UserRole;
+    action: ActionType;
+    target: string; // e.g., "Employee: Ahmed" or "Settings"
+    details: string;
+    timestamp: string; // ISO String
 }

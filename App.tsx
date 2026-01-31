@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useCallback } from 'react';
 import Layout from './components/Layout';
 import Dashboard from './components/Dashboard';
@@ -7,12 +8,23 @@ import Settings from './components/Settings';
 import UserManagement from './components/UserManagement';
 import Login from './components/Login';
 import BiometricSimulator from './components/BiometricSimulator'; 
-import PageTransition from './components/PageTransition'; 
-import { initializeDatabase, EmployeeService } from './db';
+import ActivityLogs from './components/ActivityLogs';
+import PageTransition from './components/PageTransition';
+import { initializeDatabase, EmployeeService, LogService } from './db';
 import { STORAGE_KEYS, INITIAL_EMPLOYEES } from './constants';
-import { Employee, AttendanceRecord, AppConfig, UserRole, SupabaseConfig } from './types';
+import { Employee, AttendanceRecord, AppConfig, UserRole, ActivityLog, ActionType } from './types';
 import { Permissions } from './utils';
-import { initSupabase, subscribeToRealtime, downloadAllData, uploadAllData, getSupabaseConfig, saveSupabaseConfig } from './supabaseClient';
+import { 
+    initSupabase, 
+    subscribeToRealtime, 
+    downloadAllData, 
+    uploadAllData, 
+    getSupabaseConfig,
+    upsertSingleRecord,
+    upsertSingleEmployee,
+    deleteSingleEmployee,
+    upsertConfig
+} from './supabaseClient';
 import { AnimatePresence } from 'framer-motion';
 
 function App() {
@@ -31,11 +43,29 @@ function App() {
   const [employees, setEmployees] = useState<Employee[]>(dbData.employees);
   const [config, setConfig] = useState<AppConfig>(dbData.config);
   const [attendanceRecords, setAttendanceRecords] = useState<AttendanceRecord[]>(dbData.records);
+  const [logs, setLogs] = useState<ActivityLog[]>(dbData.logs || []);
   const [isSyncing, setIsSyncing] = useState(false);
-  const [supabaseConfig, setSupabaseConfigState] = useState<SupabaseConfig>(getSupabaseConfig());
   
   // Auth State
   const [currentUser, setCurrentUser] = useState<Employee | null>(null);
+
+  // -- Helper: Add Log --
+  const addLog = (action: ActionType, target: string, details: string) => {
+      if (!currentUser) return;
+      
+      const newLog: ActivityLog = {
+          id: Date.now().toString(),
+          actorName: currentUser.name,
+          actorRole: currentUser.role,
+          action,
+          target,
+          details,
+          timestamp: new Date().toISOString()
+      };
+      
+      LogService.add(newLog);
+      setLogs(prev => [newLog, ...prev]);
+  };
 
   // -- Dark Mode Effect --
   useEffect(() => {
@@ -61,48 +91,37 @@ function App() {
     localStorage.setItem(STORAGE_KEYS.RECORDS, JSON.stringify(attendanceRecords));
   }, [attendanceRecords]);
 
-  const triggerUpload = async (newEmps: Employee[], newRecs: AttendanceRecord[], newConf: AppConfig) => {
-      const sbConfig = getSupabaseConfig();
-      if (sbConfig.isConnected && !isSyncing) {
-          // Silent background upload
-          await uploadAllData(newEmps, newRecs, newConf);
-      }
-  };
-
   // -- Realtime & Cloud Sync Logic --
   const syncFromCloud = useCallback(async () => {
       setIsSyncing(true);
       const data = await downloadAllData();
       
       if (data.success) {
-          // CRITICAL: If cloud is empty (fresh DB), SEED it with local initial data
           const cloudIsEmpty = (!data.employees || data.employees.length === 0);
           
           if (cloudIsEmpty) {
               console.log("Supabase is empty. Seeding with initial data...");
-              // Upload the CURRENT local state (which contains Initial Employees) to Supabase
               await uploadAllData(dbData.employees, dbData.records, dbData.config);
           } else {
-              // Normal Sync: Cloud has data, so update local
               if (data.employees && data.employees.length > 0) setEmployees(data.employees);
               if (data.records) setAttendanceRecords(data.records);
               if (data.config) setConfig(data.config);
               console.log("Data Synced from Cloud");
           }
-      } else {
-          console.error("Sync failed:", data.message);
       }
       setIsSyncing(false);
   }, [dbData]);
 
-  // Initial Sync
   useEffect(() => {
       const sbConfig = getSupabaseConfig();
       if (sbConfig.isConnected) {
           syncFromCloud();
           subscribeToRealtime(() => {
-              // Debounce sync slightly
-              setTimeout(syncFromCloud, 500);
+              // When a realtime event happens, we fetch the latest state
+              // We debounce this slightly to avoid double-fetching on own-updates
+              setTimeout(() => {
+                  syncFromCloud();
+              }, 500);
           });
       }
   }, [syncFromCloud]);
@@ -111,13 +130,28 @@ function App() {
   const handleLogin = (user: Employee) => {
       setCurrentUser(user);
       setActiveTab('dashboard');
+      const newLog: ActivityLog = {
+          id: Date.now().toString(),
+          actorName: user.name,
+          actorRole: user.role,
+          action: 'LOGIN',
+          target: 'System',
+          details: 'قام المستخدم بتسجيل الدخول',
+          timestamp: new Date().toISOString()
+      };
+      LogService.add(newLog);
+      setLogs(prev => [newLog, ...prev]);
   };
 
   const handleLogout = () => {
+      if (currentUser) {
+         addLog('LOGOUT', 'System', 'قام المستخدم بتسجيل الخروج');
+      }
       setCurrentUser(null);
   };
 
   const handleUpdateRecord = (newRecord: AttendanceRecord) => {
+      // 1. Optimistic UI Update
       const updatedRecords = [...attendanceRecords];
       const existsIdx = updatedRecords.findIndex(r => r.id === newRecord.id);
       if (existsIdx >= 0) {
@@ -125,25 +159,32 @@ function App() {
       } else {
           updatedRecords.push(newRecord);
       }
-      
       setAttendanceRecords(updatedRecords);
-      triggerUpload(employees, updatedRecords, config);
+      
+      // 2. Granular Cloud Update
+      upsertSingleRecord(newRecord);
+      
+      const empName = employees.find(e => e.id === newRecord.employeeId)?.name || 'مجهول';
+      addLog('UPDATE', `Attendance: ${empName}`, `تعديل سجل بتاريخ ${newRecord.date} (حالة: ${newRecord.status})`);
   };
 
   // -- Biometric Device Logic --
-  const handleDevicePunch = (employeeId: string): { status: 'in' | 'out' | 'error'; time: string; message: string } => {
+  const handleDevicePunch = (employeeId: string, location?: {lat: number, lng: number, inRange: boolean, distance: number}): { status: 'in' | 'out' | 'error'; time: string; message: string } => {
       const today = new Date();
       const dateStr = today.toISOString().split('T')[0];
       const timeStr = today.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }); // HH:MM
       
       const recordId = `${employeeId}-${dateStr}`;
       const existingRecord = attendanceRecords.find(r => r.id === recordId);
+      const employeeName = employees.find(e => e.id === employeeId)?.name || 'Unknown';
       
       let newRecord: AttendanceRecord;
       let status: 'in' | 'out' | 'error' = 'in';
       let message = '';
+      let logAction: ActionType = 'ATTENDANCE';
       
       let updatedRecords = [...attendanceRecords];
+      const locDetails = location ? `(Loc: ${location.inRange ? 'OK' : 'Fail'} - ${location.distance}m)` : '';
 
       if (!existingRecord) {
           // First punch -> Check In
@@ -153,43 +194,54 @@ function App() {
               date: dateStr,
               checkIn: timeStr,
               status: 'present',
-              source: 'device'
+              source: 'device',
+              location: location
           };
           message = `تم تسجيل دخول ${timeStr}`;
           status = 'in';
           updatedRecords = [...attendanceRecords, newRecord];
           setAttendanceRecords(updatedRecords);
+          addLog(logAction, `Device: ${employeeName}`, `تسجيل دخول عبر البصمة ${timeStr} ${locDetails}`);
+          
+          // Cloud Update
+          upsertSingleRecord(newRecord);
+
       } else if (existingRecord.checkIn && !existingRecord.checkOut) {
           // Second punch -> Check Out
           newRecord = {
               ...existingRecord,
               checkOut: timeStr,
-              source: 'device'
+              source: 'device',
           };
           message = `تم تسجيل خروج ${timeStr}`;
           status = 'out';
           updatedRecords = attendanceRecords.map(r => r.id === recordId ? newRecord : r);
           setAttendanceRecords(updatedRecords);
+          addLog(logAction, `Device: ${employeeName}`, `تسجيل خروج عبر البصمة ${timeStr} ${locDetails}`);
+
+          // Cloud Update
+          upsertSingleRecord(newRecord);
+
       } else if (existingRecord.checkIn && existingRecord.checkOut) {
-          // Already completed
           return { status: 'error', time: timeStr, message: 'تم تسجيل الدخول والخروج لهذا اليوم مسبقاً' };
       } else {
-           // Fallback logic
            return { status: 'error', time: timeStr, message: 'حالة غير معروفة للسجل' };
       }
 
-      triggerUpload(employees, updatedRecords, config); // Sync to cloud
       return { status, time: timeStr, message };
   };
 
   const handleConfigChange = (newConfig: AppConfig) => {
       setConfig(newConfig);
-      triggerUpload(employees, attendanceRecords, newConfig);
+      upsertConfig(newConfig); // Granular Update
+      addLog('SETTINGS', 'General Settings', 'تم تحديث إعدادات النظام');
   };
 
   const handleResetData = () => {
     if (window.confirm('تحذير: سيتم حذف البيانات محلياً. إذا كنت متصلاً بالسحابة، قد تحتاج لحذف البيانات من Supabase يدوياً.')) {
       const defaultAdmin: Employee = INITIAL_EMPLOYEES[0];
+      
+      addLog('DELETE', 'System', 'إعادة ضبط المصنع (حذف جميع البيانات المحلية)');
 
       setEmployees([defaultAdmin]);
       setAttendanceRecords([]);
@@ -202,35 +254,35 @@ function App() {
       const newUser = EmployeeService.add(user);
       const newEmployees = [...employees, newUser];
       setEmployees(newEmployees);
-      triggerUpload(newEmployees, attendanceRecords, config);
+      
+      upsertSingleEmployee(newUser); // Granular Update
+      
+      addLog('CREATE', `User: ${user.name}`, `إضافة مستخدم جديد (${user.role})`);
   };
 
   const handleUpdateUser = (id: string, updates: Partial<Employee>) => {
       EmployeeService.update(id, updates);
-      const newEmployees = employees.map(e => e.id === id ? { ...e, ...updates } : e);
+      const updatedUser = { ...employees.find(e => e.id === id)!, ...updates };
+      const newEmployees = employees.map(e => e.id === id ? updatedUser : e);
       setEmployees(newEmployees);
-      triggerUpload(newEmployees, attendanceRecords, config);
+      
+      upsertSingleEmployee(updatedUser); // Granular Update
+      
+      const oldName = employees.find(e => e.id === id)?.name;
+      addLog('UPDATE', `User: ${oldName}`, `تحديث بيانات المستخدم`);
   };
 
   const handleDeleteUser = (id: string) => {
+      const targetName = employees.find(e => e.id === id)?.name || 'Unknown';
       EmployeeService.delete(id);
       const newEmployees = employees.filter(e => e.id !== id);
       setEmployees(newEmployees);
-      triggerUpload(newEmployees, attendanceRecords, config);
+      
+      deleteSingleEmployee(id); // Granular Update
+      
+      addLog('DELETE', `User: ${targetName}`, `حذف المستخدم من النظام`);
   };
 
-  // -- Supabase Configuration Handler --
-  const handleSupabaseConfigSave = (newConfig: SupabaseConfig) => {
-      saveSupabaseConfig(newConfig);
-      setSupabaseConfigState(newConfig);
-      if (newConfig.isConnected) {
-          syncFromCloud();
-      } else {
-          alert('تم حفظ الإعدادات، ولكن الاتصال غير مفعل لعدم اكتمال البيانات.');
-      }
-  };
-
-  // --- Auth Check ---
   if (!currentUser) {
       return <Login employees={employees} onLogin={handleLogin} />;
   }
@@ -267,6 +319,7 @@ function App() {
                   employees={employees}
                   onDevicePunch={handleDevicePunch}
                   currentUser={currentUser}
+                  config={config}
               />
           );
       case 'reports':
@@ -289,6 +342,9 @@ function App() {
                 onDeleteUser={handleDeleteUser}
             />
         );
+      case 'logs':
+        if (!Permissions.canViewLogs(userRole)) return <div className="text-red-500 p-8">غير مصرح لك بالوصول لهذه الصفحة</div>;
+        return <ActivityLogs logs={logs} />;
       case 'settings':
         if (!Permissions.canManageSettings(userRole)) return <div className="text-red-500 p-8">غير مصرح لك بالوصول لهذه الصفحة</div>;
         return (
@@ -298,10 +354,6 @@ function App() {
              userRole={userRole}
              onRoleChange={() => {}} 
              onResetData={handleResetData}
-             supabaseConfig={supabaseConfig}
-             onSupabaseConfigSave={handleSupabaseConfigSave}
-             onSyncClick={syncFromCloud}
-             isSyncing={isSyncing}
           />
         );
       default:

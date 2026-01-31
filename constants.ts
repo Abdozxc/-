@@ -1,3 +1,4 @@
+
 import { Employee, AttendanceRecord } from './types';
 
 // System Constants
@@ -12,13 +13,19 @@ export const WEIGHT_OVERTIME = 0.8;   // Overtime
 export const WEIGHT_ABSENCE = 0.1;    // Presence
 export const DEFAULT_PENALTY_VALUE = 5;
 
+// Location Defaults
+export const DEFAULT_LAT = 0;
+export const DEFAULT_LNG = 0;
+export const DEFAULT_RADIUS = 100; // Meters
+
 // Storage Keys
 export const STORAGE_KEYS = {
   EMPLOYEES: 'mowazeb_employees_v1',
   RECORDS: 'mowazeb_records_v1',
   CONFIG: 'mowazeb_config_v1',
   DB_VERSION: 'mowazeb_db_version',
-  MIGRATION_LOG: 'mowazeb_migration_logs'
+  MIGRATION_LOG: 'mowazeb_migration_logs',
+  ACTIVITY_LOGS: 'mowazeb_activity_logs_v1'
 };
 
 export const INITIAL_EMPLOYEES: Employee[] = [

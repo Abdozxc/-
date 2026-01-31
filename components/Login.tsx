@@ -35,19 +35,33 @@ const Login: React.FC<LoginProps> = ({ employees, onLogin }) => {
     };
 
     return (
-        <div className="min-h-screen w-full flex relative bg-[#0B1120] text-white overflow-hidden font-sans" dir="rtl">
+        <div className="min-h-screen w-full flex relative bg-[#0B1120] text-white overflow-y-auto font-sans" dir="rtl">
             
             {/* Background Glow Effects */}
             <div className="absolute top-[-10%] right-[-5%] w-[500px] h-[500px] bg-blue-600/10 rounded-full blur-[120px] pointer-events-none" />
             <div className="absolute bottom-[-10%] left-[-10%] w-[600px] h-[600px] bg-indigo-600/10 rounded-full blur-[100px] pointer-events-none" />
 
             {/* Right Side: Form Container */}
-            <div className="w-full lg:w-1/2 flex flex-col justify-center items-center p-8 z-20 relative">
+            <div className="w-full lg:w-1/2 flex flex-col justify-center items-center p-6 md:p-8 z-20 relative py-12 lg:py-0">
                 <div className="w-full max-w-md space-y-8">
                     
+                    {/* Mobile Only Logo Header */}
+                    <div className="lg:hidden flex flex-col items-center space-y-4 mb-2 animate-fade-in">
+                        <div className="relative">
+                            <div className="absolute inset-0 bg-blue-500 blur-[20px] opacity-20 rounded-full"></div>
+                            <div className="w-20 h-20 bg-gradient-to-tr from-slate-800 to-slate-700 rounded-2xl border border-slate-600/50 flex items-center justify-center shadow-xl relative rotate-3">
+                                <Fingerprint size={40} className="text-blue-400" />
+                            </div>
+                        </div>
+                        <div className="text-center">
+                            <h2 className="text-xl font-bold text-white">مواظب PRO</h2>
+                            <div className="h-0.5 w-12 bg-blue-500/50 mx-auto mt-1 rounded-full"></div>
+                        </div>
+                    </div>
+
                     {/* Header Text */}
                     <div className="text-center lg:text-right space-y-2">
-                        <h1 className="text-4xl font-bold text-white tracking-tight">تسجيل الدخول</h1>
+                        <h1 className="text-3xl md:text-4xl font-bold text-white tracking-tight">تسجيل الدخول</h1>
                         <p className="text-slate-400 text-sm">مرحباً بعودتك، يرجى إدخال بياناتك للمتابعة</p>
                     </div>
 
@@ -128,13 +142,13 @@ const Login: React.FC<LoginProps> = ({ employees, onLogin }) => {
                         <span>يتم حفظ البيانات محلياً (Local Storage)</span>
                     </div>
 
-                    <div className="absolute bottom-4 left-0 right-0 text-center">
+                    <div className="pt-8 text-center">
                         <p className="text-[10px] text-slate-600">© {new Date().getFullYear()} نظام إدارة المصروفات والحضور. جميع الحقوق محفوظة.</p>
                     </div>
                 </div>
             </div>
 
-            {/* Left Side: Branding / Hero Area */}
+            {/* Left Side: Branding / Hero Area - Hidden on Mobile */}
             <div className="hidden lg:flex w-1/2 relative items-center justify-center z-10 overflow-hidden">
                 {/* Slanted Background Shape */}
                 <div className="absolute inset-y-0 left-0 w-[120%] bg-[#111827] transform -skew-x-6 origin-bottom-left translate-x-16 border-l border-slate-800 shadow-[0_0_100px_rgba(0,0,0,0.5)] z-0">

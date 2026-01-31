@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
-import { AppConfig, UserRole, Holiday, SupabaseConfig } from '../types';
-import { Save, Archive, CheckCircle, Calendar, Plus, X, Clock, Cloud, RefreshCw, Link as LinkIcon, AlertCircle } from 'lucide-react';
+import React, { useState } from 'react';
+import { AppConfig, UserRole, Holiday } from '../types';
+import { Save, Archive, CheckCircle, Calendar, Plus, X, Clock, MapPin } from 'lucide-react';
 import { Permissions } from '../utils';
 
 interface SettingsProps {
@@ -9,32 +9,13 @@ interface SettingsProps {
   userRole: UserRole;
   onRoleChange: (role: UserRole) => void;
   onResetData?: () => void;
-  // Supabase Props
-  supabaseConfig?: SupabaseConfig;
-  onSupabaseConfigSave?: (config: SupabaseConfig) => void;
-  onSyncClick?: () => void;
-  isSyncing?: boolean;
 }
 
-const Settings: React.FC<SettingsProps> = ({ 
-    config, onConfigChange, userRole, onRoleChange, onResetData,
-    supabaseConfig, onSupabaseConfigSave, onSyncClick, isSyncing 
-}) => {
+const Settings: React.FC<SettingsProps> = ({ config, onConfigChange, userRole, onRoleChange, onResetData }) => {
   const [localConfig, setLocalConfig] = useState<AppConfig>(config);
   const [showSaved, setShowSaved] = useState(false);
   const [showArchived, setShowArchived] = useState(false);
   
-  // Supabase Local State
-  const [sbUrl, setSbUrl] = useState('');
-  const [sbKey, setSbKey] = useState('');
-
-  useEffect(() => {
-      if (supabaseConfig) {
-          setSbUrl(supabaseConfig.projectUrl || '');
-          setSbKey(supabaseConfig.apiKey || '');
-      }
-  }, [supabaseConfig]);
-
   const [newHoliday, setNewHoliday] = useState<{name: string, startDate: string, endDate: string}>({
       name: '', startDate: '', endDate: ''
   });
@@ -65,14 +46,24 @@ const Settings: React.FC<SettingsProps> = ({
   const handleRemoveHoliday = (id: string) => {
       setLocalConfig(prev => ({ ...prev, holidays: prev.holidays.filter(h => h.id !== id) }));
   };
-  
-  const handleSaveSupabase = () => {
-      if (onSupabaseConfigSave) {
-          onSupabaseConfigSave({
-              projectUrl: sbUrl,
-              apiKey: sbKey,
-              isConnected: !!sbUrl && !!sbKey
-          });
+
+  const getCurrentLocation = () => {
+      if ('geolocation' in navigator) {
+          navigator.geolocation.getCurrentPosition(
+              (position) => {
+                  setLocalConfig(prev => ({
+                      ...prev,
+                      companyLat: position.coords.latitude,
+                      companyLng: position.coords.longitude
+                  }));
+                  alert("تم تحديث الإحداثيات إلى موقعك الحالي بنجاح");
+              },
+              (error) => {
+                  alert("فشل في جلب الموقع. يرجى التأكد من تفعيل الـ GPS والسماح للمتصفح بالوصول للموقع.");
+              }
+          );
+      } else {
+          alert("المتصفح لا يدعم تحديد الموقع");
       }
   };
 
@@ -82,78 +73,9 @@ const Settings: React.FC<SettingsProps> = ({
   }
 
   return (
-    <div className="space-y-6 animate-fade-in">
+    <div className="space-y-6">
       <h2 className="text-2xl font-bold text-slate-800 dark:text-white mb-6">الإعدادات ولوحة الإدارة</h2>
       
-      {/* --- Supabase Connection Section --- */}
-      <div className="bg-white dark:bg-slate-800 p-6 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-700 relative overflow-hidden">
-          <div className="absolute top-0 left-0 w-1 h-full bg-emerald-500"></div>
-          <div className="flex justify-between items-start mb-4">
-              <div>
-                <h3 className="font-bold text-slate-800 dark:text-white flex items-center gap-2">
-                    <Cloud size={20} className="text-emerald-500" />
-                    الربط السحابي (Supabase)
-                </h3>
-                <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">قم بربط التطبيق بقاعدة بيانات Supabase لمزامنة البيانات بين الأجهزة.</p>
-              </div>
-              <div className="flex items-center gap-2">
-                  {supabaseConfig?.isConnected ? (
-                      <span className="flex items-center gap-1 text-xs font-bold text-emerald-600 bg-emerald-50 px-2 py-1 rounded-full border border-emerald-200">
-                          <CheckCircle size={12} /> متصل
-                      </span>
-                  ) : (
-                      <span className="flex items-center gap-1 text-xs font-bold text-slate-500 bg-slate-100 px-2 py-1 rounded-full border border-slate-200">
-                          <AlertCircle size={12} /> غير متصل
-                      </span>
-                  )}
-              </div>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-              <div>
-                  <label className="block text-xs font-medium text-slate-600 dark:text-slate-300 mb-1">Project URL</label>
-                  <input 
-                      type="text" 
-                      value={sbUrl}
-                      onChange={e => setSbUrl(e.target.value)}
-                      placeholder="https://xyz.supabase.co"
-                      className="w-full p-2 border rounded-lg outline-none focus:border-emerald-500 dir-ltr text-left dark:bg-slate-700 dark:border-slate-600 dark:text-white"
-                  />
-              </div>
-              <div>
-                  <label className="block text-xs font-medium text-slate-600 dark:text-slate-300 mb-1">API Key (public/anon)</label>
-                  <input 
-                      type="password" 
-                      value={sbKey}
-                      onChange={e => setSbKey(e.target.value)}
-                      placeholder="eyJhbGciOiJIUzI1NiIsInR5c..."
-                      className="w-full p-2 border rounded-lg outline-none focus:border-emerald-500 dir-ltr text-left dark:bg-slate-700 dark:border-slate-600 dark:text-white"
-                  />
-              </div>
-          </div>
-          
-          <div className="flex gap-3">
-              <button 
-                onClick={handleSaveSupabase}
-                className="flex items-center gap-2 px-4 py-2 bg-slate-800 text-white rounded-lg hover:bg-slate-900 transition-colors text-sm"
-              >
-                  <LinkIcon size={16} />
-                  حفظ إعدادات الاتصال
-              </button>
-              
-              {supabaseConfig?.isConnected && onSyncClick && (
-                  <button 
-                    onClick={onSyncClick}
-                    disabled={isSyncing}
-                    className="flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors text-sm disabled:opacity-70 disabled:cursor-wait"
-                  >
-                      <RefreshCw size={16} className={isSyncing ? "animate-spin" : ""} />
-                      {isSyncing ? "جاري المزامنة..." : "جلب البيانات الآن"}
-                  </button>
-              )}
-          </div>
-      </div>
-
       {/* --- NORMAL SETTINGS --- */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div className="bg-white dark:bg-slate-800 p-6 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-700">
@@ -194,6 +116,73 @@ const Settings: React.FC<SettingsProps> = ({
                         <span className="text-slate-400 dark:text-slate-500 text-xs whitespace-nowrap">لن يحسب تأخير</span>
                     </div>
                 </div>
+            </div>
+        </div>
+
+        {/* --- GEOLOCATION SETTINGS --- */}
+        <div className="bg-white dark:bg-slate-800 p-6 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-700">
+            <h3 className="font-bold text-slate-800 dark:text-white mb-4 flex items-center gap-2">
+                <MapPin size={20} className="text-red-500" />
+                إعدادات النطاق الجغرافي (Geofencing)
+            </h3>
+            
+            <div className="space-y-4">
+                 <div className="flex items-center gap-2 p-2 rounded-lg bg-slate-50 dark:bg-slate-700/50">
+                     <input 
+                        type="checkbox"
+                        id="locationEnabled"
+                        checked={localConfig.locationEnabled || false}
+                        onChange={e => setLocalConfig({...localConfig, locationEnabled: e.target.checked})}
+                        className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
+                     />
+                     <label htmlFor="locationEnabled" className="text-sm font-medium text-slate-700 dark:text-slate-200 cursor-pointer">
+                         تفعيل التحقق من الموقع الجغرافي
+                     </label>
+                 </div>
+
+                 {localConfig.locationEnabled && (
+                    <div className="space-y-3 animate-fade-in">
+                         <div className="grid grid-cols-2 gap-4">
+                            <div>
+                                <label className="block text-xs font-medium text-slate-500 mb-1">خط العرض (Lat)</label>
+                                <input 
+                                    type="number" step="any"
+                                    value={localConfig.companyLat || 0}
+                                    onChange={e => setLocalConfig({...localConfig, companyLat: parseFloat(e.target.value)})}
+                                    className="w-full p-2 text-xs border rounded-lg dark:bg-slate-700 dark:border-slate-600 dark:text-white"
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-xs font-medium text-slate-500 mb-1">خط الطول (Lng)</label>
+                                <input 
+                                    type="number" step="any"
+                                    value={localConfig.companyLng || 0}
+                                    onChange={e => setLocalConfig({...localConfig, companyLng: parseFloat(e.target.value)})}
+                                    className="w-full p-2 text-xs border rounded-lg dark:bg-slate-700 dark:border-slate-600 dark:text-white"
+                                />
+                            </div>
+                         </div>
+                         
+                         <button 
+                            onClick={getCurrentLocation}
+                            className="w-full flex items-center justify-center gap-2 py-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-600 dark:text-slate-300 rounded-lg text-xs font-bold transition-colors"
+                         >
+                             <MapPin size={14} />
+                             تعيين الموقع الحالي كموقع للشركة
+                         </button>
+
+                         <div>
+                            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">نصف القطر المسموح (بالمتر)</label>
+                            <input 
+                                type="number" min="10"
+                                value={localConfig.allowedRadiusMeters || 100}
+                                onChange={e => setLocalConfig({...localConfig, allowedRadiusMeters: parseInt(e.target.value)})}
+                                className="w-full p-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none bg-slate-50 dark:bg-slate-700 dark:border-slate-600 dark:text-white"
+                            />
+                            <p className="text-[10px] text-slate-400 mt-1">المسافة القصوى المسموح للموظف بالبصم فيها بعيداً عن المركز.</p>
+                         </div>
+                    </div>
+                 )}
             </div>
         </div>
 

@@ -1,5 +1,6 @@
-import { STORAGE_KEYS, DB_VERSION, WORK_START_TIME, WORK_END_TIME, WEIGHT_COMMITMENT, WEIGHT_OVERTIME, WEIGHT_ABSENCE, DEFAULT_PENALTY_VALUE, DEFAULT_GRACE_PERIOD, INITIAL_EMPLOYEES, generateMockAttendance } from './constants';
-import { AppConfig, Employee, AttendanceRecord } from './types';
+
+import { STORAGE_KEYS, DB_VERSION, WORK_START_TIME, WORK_END_TIME, WEIGHT_COMMITMENT, WEIGHT_OVERTIME, WEIGHT_ABSENCE, DEFAULT_PENALTY_VALUE, DEFAULT_GRACE_PERIOD, INITIAL_EMPLOYEES, generateMockAttendance, DEFAULT_LAT, DEFAULT_LNG, DEFAULT_RADIUS } from './constants';
+import { AppConfig, Employee, AttendanceRecord, ActivityLog } from './types';
 import { v4 as uuidv4 } from 'uuid'; 
 
 // -- Supabase Readiness Layer --
@@ -22,6 +23,7 @@ const createBackup = () => {
             employees: localStorage.getItem(STORAGE_KEYS.EMPLOYEES),
             records: localStorage.getItem(STORAGE_KEYS.RECORDS),
             config: localStorage.getItem(STORAGE_KEYS.CONFIG),
+            logs: localStorage.getItem(STORAGE_KEYS.ACTIVITY_LOGS),
             version: localStorage.getItem(STORAGE_KEYS.DB_VERSION)
         };
         localStorage.setItem(`mowazeb_backup_${timestamp}`, JSON.stringify(backupData));
@@ -34,6 +36,19 @@ const createBackup = () => {
 
 // --- Services (Mocking Supabase Tables) ---
 
+export const LogService = {
+    getAll: (): ActivityLog[] => {
+        return getStoredItem<ActivityLog[]>(STORAGE_KEYS.ACTIVITY_LOGS, []);
+    },
+
+    add: (log: ActivityLog): void => {
+        const logs = LogService.getAll();
+        // Keep only last 500 logs to prevent localStorage overflow
+        const updated = [log, ...logs].slice(0, 500);
+        localStorage.setItem(STORAGE_KEYS.ACTIVITY_LOGS, JSON.stringify(updated));
+    }
+};
+
 export const EmployeeService = {
     getAll: (): Employee[] => {
         return getStoredItem<Employee[]>(STORAGE_KEYS.EMPLOYEES, INITIAL_EMPLOYEES);
@@ -43,7 +58,7 @@ export const EmployeeService = {
         const employees = EmployeeService.getAll();
         const newEmployee: Employee = {
             ...employee,
-            id: uuidv4(), 
+            id: Date.now().toString(), // Use uuidv4() when package is available
         };
         const updated = [...employees, newEmployee];
         localStorage.setItem(STORAGE_KEYS.EMPLOYEES, JSON.stringify(updated));
@@ -111,14 +126,6 @@ const runMigrations = (currentVersion: number) => {
     return version;
 };
 
-// Define explicit type for migration logs
-interface MigrationLog {
-    date: string;
-    from: number;
-    to: number;
-    status: string;
-}
-
 export const initializeDatabase = () => {
     const currentVersion = getStoredItem(STORAGE_KEYS.DB_VERSION, 0);
 
@@ -127,8 +134,7 @@ export const initializeDatabase = () => {
         const newVersion = runMigrations(currentVersion);
         localStorage.setItem(STORAGE_KEYS.DB_VERSION, JSON.stringify(newVersion));
         
-        // Fix: Use generic type parameter <MigrationLog[]> instead of type assertion to prevent 'never' error
-        const logs = getStoredItem<MigrationLog[]>(STORAGE_KEYS.MIGRATION_LOG, []);
+        const logs = getStoredItem(STORAGE_KEYS.MIGRATION_LOG, []);
         logs.push({ date: new Date().toISOString(), from: currentVersion, to: newVersion, status: 'SUCCESS' });
         localStorage.setItem(STORAGE_KEYS.MIGRATION_LOG, JSON.stringify(logs));
     }
@@ -149,11 +155,16 @@ export const initializeDatabase = () => {
             weightOvertime: WEIGHT_OVERTIME,
             weightAbsence: WEIGHT_ABSENCE,
             penaltyValue: DEFAULT_PENALTY_VALUE,
-            holidays: []
+            holidays: [],
+            locationEnabled: false,
+            companyLat: DEFAULT_LAT,
+            companyLng: DEFAULT_LNG,
+            allowedRadiusMeters: DEFAULT_RADIUS
         };
         localStorage.setItem(STORAGE_KEYS.CONFIG, JSON.stringify(defaultConfig));
         localStorage.setItem(STORAGE_KEYS.DB_VERSION, JSON.stringify(DB_VERSION));
     }
+    // No logs initially
 
     return {
         employees: EmployeeService.getAll(),
@@ -166,7 +177,12 @@ export const initializeDatabase = () => {
              weightOvertime: WEIGHT_OVERTIME,
              weightAbsence: WEIGHT_ABSENCE,
              penaltyValue: DEFAULT_PENALTY_VALUE,
-             holidays: []
-        })
+             holidays: [],
+             locationEnabled: false,
+             companyLat: DEFAULT_LAT,
+             companyLng: DEFAULT_LNG,
+             allowedRadiusMeters: DEFAULT_RADIUS
+        }),
+        logs: LogService.getAll()
     };
 };

@@ -1,8 +1,8 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 import { Employee, AttendanceRecord, AppConfig, UserRole } from '../types';
 import { calculateRanking, minutesToTime } from '../utils';
-import { Trophy, Clock, AlertTriangle, CalendarCheck, Users, Filter, Calendar } from 'lucide-react';
+import { Trophy, Clock, AlertTriangle, CalendarCheck, Users } from 'lucide-react';
 import { Permissions } from '../utils';
 
 interface DashboardProps {
@@ -30,40 +30,26 @@ const CustomTooltip = ({ active, payload, label }: any) => {
 };
 
 const Dashboard: React.FC<DashboardProps> = ({ employees, attendanceRecords, config, currentUserRole, currentEmployeeId }) => {
-  // Filter States
-  const [filterType, setFilterType] = useState<'monthly' | 'daily'>('monthly');
-  // Default to today's date YYYY-MM-DD
-  const [selectedDate, setSelectedDate] = useState(() => new Date().toISOString().split('T')[0]);
-  // Default to current month YYYY-MM
-  const [selectedMonth, setSelectedMonth] = useState(() => {
-      const now = new Date();
-      return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-  });
-
-  // 1. Filter records to only include those belonging to currently active employees AND match the filter
+  // 1. Filter records to only include those belonging to currently active employees AND within CURRENT MONTH
   const activeEmployeeIds = useMemo(() => new Set(employees.map(e => e.id)), [employees]);
   
   const activeRecords = useMemo(() => {
+      const today = new Date();
+      const currentMonth = today.getMonth(); // 0-indexed
+      const currentYear = today.getFullYear();
+
       return attendanceRecords.filter(r => {
           if (!activeEmployeeIds.has(r.employeeId)) return false;
           
-          if (filterType === 'monthly') {
-             // Check Month & Year
-             const [fYearStr, fMonthStr] = selectedMonth.split('-');
-             const fYear = parseInt(fYearStr);
-             const fMonth = parseInt(fMonthStr); // 1-12
-             
-             const [rYear, rMonth] = r.date.split('-').map(Number);
-             return rYear === fYear && rMonth === fMonth;
-
-          } else {
-             // Check Exact Date
-             return r.date === selectedDate;
-          }
+          // Parse YYYY-MM-DD safely to avoid timezone issues
+          const [rYear, rMonth, rDay] = r.date.split('-').map(Number);
+          
+          // Check if record is in current month and year
+          return rMonth - 1 === currentMonth && rYear === currentYear;
       });
-  }, [attendanceRecords, activeEmployeeIds, filterType, selectedDate, selectedMonth]);
+  }, [attendanceRecords, activeEmployeeIds]);
 
-  // 2. Calculate ranking based on FILTERED active records only
+  // 2. Calculate ranking based on ACTIVE records only
   const ranking = useMemo(() => calculateRanking(employees, activeRecords, config), [employees, activeRecords, config]);
   
   const canViewAll = Permissions.canViewAllDashboard(currentUserRole) || Permissions.isOwner(currentUserRole);
@@ -71,7 +57,7 @@ const Dashboard: React.FC<DashboardProps> = ({ employees, attendanceRecords, con
   const myData = ranking.find(r => r.employeeId === currentEmployeeId);
   const topEmployees = ranking.slice(0, 3);
   
-  // Stats Calculation (Using filtered activeRecords)
+  // Stats Calculation (Using activeRecords instead of attendanceRecords)
   const totalEmployees = employees.length;
   
   const totalLate = activeRecords.filter(r => {
@@ -81,13 +67,9 @@ const Dashboard: React.FC<DashboardProps> = ({ employees, attendanceRecords, con
   
   const totalAbsent = activeRecords.filter(r => r.status === 'absent').length;
 
-  // Determine denominator for rates. 
-  // If Daily view, denominator is totalEmployees (everyone should be present).
-  // If Monthly view, denominator is records count.
-  const recordsDenominator = filterType === 'daily' ? totalEmployees : Math.max(1, activeRecords.length);
-
-  const commitmentRate = recordsDenominator > 0 
-      ? Math.round(((activeRecords.length - totalAbsent - totalLate) / recordsDenominator) * 100)
+  const totalRecordsCount = Math.max(1, activeRecords.length);
+  const commitmentRate = activeRecords.length > 0 
+      ? Math.round(((activeRecords.length - totalAbsent - totalLate) / totalRecordsCount) * 100)
       : 0;
 
   const chartData = ranking.slice(0, 10).map(emp => ({
@@ -101,16 +83,6 @@ const Dashboard: React.FC<DashboardProps> = ({ employees, attendanceRecords, con
       { name: 'غياب', value: totalAbsent },
   ];
 
-  const getFilterLabel = () => {
-      if (filterType === 'monthly') {
-          const [y, m] = selectedMonth.split('-');
-          const date = new Date(parseInt(y), parseInt(m)-1);
-          return date.toLocaleDateString('ar-EG', { month: 'long', year: 'numeric' });
-      } else {
-          return new Date(selectedDate).toLocaleDateString('ar-EG', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
-      }
-  };
-
   // If no employees exist, show empty state for Manager
   if (canViewAll && employees.length === 0) {
       return (
@@ -123,16 +95,14 @@ const Dashboard: React.FC<DashboardProps> = ({ employees, attendanceRecords, con
   }
 
   if (!canViewAll && myData) {
-      // --- Employee View (Limited) ---
-      // Employee view typically just shows current month progress, so we might not expose full filters here 
-      // or we can keep it simple. Let's keep the dashboard simple for employees.
+      // --- Employee View ---
       return (
           <div className="space-y-8">
               <h2 className="text-2xl font-bold text-slate-800 dark:text-white">أهلاً بك، {myData.name}</h2>
               
               <div className="bg-gradient-to-r from-indigo-500 to-purple-600 rounded-2xl p-8 text-white shadow-xl relative overflow-hidden transition-all hover:scale-[1.01] duration-300">
                   <div className="relative z-10">
-                      <div className="text-indigo-100 text-lg mb-2">ترتيبك الحالي (هذا الشهر)</div>
+                      <div className="text-indigo-100 text-lg mb-2">ترتيبك الحالي</div>
                       <div className="text-6xl font-black mb-4 drop-shadow-md">#{myData.rank}</div>
                       <div className="text-2xl font-bold mb-1">{myData.score} نقطة</div>
                       <p className="text-indigo-100 opacity-90 max-w-md">
@@ -171,64 +141,27 @@ const Dashboard: React.FC<DashboardProps> = ({ employees, attendanceRecords, con
   // --- Manager / Owner View ---
   return (
     <div className="space-y-8">
-      <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h2 className="text-2xl font-bold text-slate-800 dark:text-white">لوحة التحكم العامة</h2>
           <p className="text-slate-500 dark:text-slate-400 text-sm mt-1">
-             إحصائيات وتحليلات الأداء للفترة: <span className="font-bold text-blue-600 dark:text-blue-400">{getFilterLabel()}</span>
+              نظرة عامة على أداء الموظفين والحضور (1 - {new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0).getDate()} {new Date().toLocaleDateString('ar-EG', { month: 'long' })})
           </p>
         </div>
-        
-        {/* --- FILTER CONTROLS --- */}
-        <div className="flex flex-wrap items-center gap-3 bg-white dark:bg-slate-800 p-2 rounded-xl shadow-sm border border-slate-100 dark:border-slate-700">
-             <div className="flex bg-slate-100 dark:bg-slate-700 rounded-lg p-1">
-                 <button 
-                    onClick={() => setFilterType('monthly')}
-                    className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all ${filterType === 'monthly' ? 'bg-white dark:bg-slate-600 shadow text-blue-600 dark:text-blue-300' : 'text-slate-500 dark:text-slate-400 hover:text-slate-700'}`}
-                 >
-                     شهري
-                 </button>
-                 <button 
-                    onClick={() => setFilterType('daily')}
-                    className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all ${filterType === 'daily' ? 'bg-white dark:bg-slate-600 shadow text-blue-600 dark:text-blue-300' : 'text-slate-500 dark:text-slate-400 hover:text-slate-700'}`}
-                 >
-                     يومي
-                 </button>
-             </div>
-
-             <div className="h-6 w-px bg-slate-200 dark:bg-slate-600 mx-1"></div>
-
-             <div className="flex items-center gap-2">
-                 <Calendar size={16} className="text-slate-400" />
-                 {filterType === 'monthly' ? (
-                     <input 
-                        type="month" 
-                        value={selectedMonth}
-                        onChange={(e) => setSelectedMonth(e.target.value)}
-                        className="bg-transparent text-sm font-medium text-slate-700 dark:text-slate-200 outline-none"
-                     />
-                 ) : (
-                     <input 
-                        type="date" 
-                        value={selectedDate}
-                        onChange={(e) => setSelectedDate(e.target.value)}
-                        className="bg-transparent text-sm font-medium text-slate-700 dark:text-slate-200 outline-none"
-                     />
-                 )}
-             </div>
+        <div className="flex gap-2">
+            <span className="px-4 py-2 bg-white dark:bg-slate-800 rounded-lg shadow-sm text-sm font-medium text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
+                {new Date().toLocaleDateString('ar-EG', { month: 'long', year: 'numeric' })}
+            </span>
         </div>
       </div>
 
       {activeRecords.length === 0 ? (
-          <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-700 text-yellow-800 dark:text-yellow-200 p-8 rounded-xl flex flex-col items-center justify-center gap-3 animate-fade-in">
-              <div className="bg-yellow-100 dark:bg-yellow-900/40 p-3 rounded-full">
-                  <AlertTriangle size={32} />
-              </div>
-              <h3 className="font-bold text-lg">لا توجد سجلات لهذه الفترة</h3>
-              <p className="text-sm opacity-80">لم يتم العثور على بيانات حضور وانصراف للموظفين في التاريخ المحدد.</p>
+          <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-700 text-yellow-800 dark:text-yellow-200 p-4 rounded-xl flex items-center gap-2">
+              <AlertTriangle size={20} />
+              <span>لا توجد سجلات حضور مسجلة للموظفين الحاليين لهذا الشهر.</span>
           </div>
       ) : (
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 animate-fade-in">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <div className="order-2 md:order-1 bg-white dark:bg-slate-800 p-6 rounded-2xl shadow-sm dark:shadow-slate-900/50 border border-slate-100 dark:border-slate-700 flex flex-col items-center pt-8 mt-4 relative transition-all hover:-translate-y-1 duration-300">
              <div className="absolute -top-4 w-8 h-8 bg-slate-200 dark:bg-slate-600 rounded-full flex items-center justify-center font-bold text-slate-600 dark:text-slate-200 shadow-sm border-4 border-white dark:border-slate-800">2</div>
              {topEmployees[1] && (
@@ -270,7 +203,6 @@ const Dashboard: React.FC<DashboardProps> = ({ employees, attendanceRecords, con
       </div>
       )}
 
-      {/* Stats Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {[
             { label: 'إجمالي الموظفين', val: totalEmployees, icon: Users, color: 'text-blue-600', bg: 'bg-blue-50 dark:bg-blue-900/20' },
@@ -354,7 +286,7 @@ const Dashboard: React.FC<DashboardProps> = ({ employees, attendanceRecords, con
       <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-sm dark:shadow-slate-900/50 border border-slate-100 dark:border-slate-700 overflow-hidden">
         <div className="p-6 border-b border-slate-100 dark:border-slate-700">
              <h3 className="font-bold text-slate-800 dark:text-slate-100">تفاصيل الأداء للموظفين</h3>
-             <p className="text-slate-500 dark:text-slate-400 text-xs mt-1">عرض مفصل لبيانات الحضور والغياب والإضافي للفترة المحددة</p>
+             <p className="text-slate-500 dark:text-slate-400 text-xs mt-1">عرض مفصل لبيانات الحضور والغياب والإضافي</p>
         </div>
         <div className="overflow-x-auto">
             <table className="w-full text-right text-sm">
@@ -373,14 +305,7 @@ const Dashboard: React.FC<DashboardProps> = ({ employees, attendanceRecords, con
                     </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-50 dark:divide-slate-700">
-                    {ranking.length === 0 ? (
-                        <tr>
-                            <td colSpan={10} className="p-6 text-center text-slate-400 dark:text-slate-500">
-                                لا توجد بيانات متاحة لهذا الفلتر
-                            </td>
-                        </tr>
-                    ) : (
-                    ranking.map((row, idx) => (
+                    {ranking.map((row, idx) => (
                         <tr key={row.employeeId} className="hover:bg-slate-50/50 dark:hover:bg-slate-700/50 transition-colors">
                             <td className="p-3">
                                 <span className={`
@@ -428,8 +353,7 @@ const Dashboard: React.FC<DashboardProps> = ({ employees, attendanceRecords, con
                                 </div>
                             </td>
                         </tr>
-                    ))
-                    )}
+                    ))}
                 </tbody>
             </table>
         </div>

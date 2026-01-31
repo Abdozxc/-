@@ -1,3 +1,4 @@
+
 import { createClient, SupabaseClient, RealtimeChannel } from '@supabase/supabase-js';
 import { SupabaseConfig, Employee, AttendanceRecord, AppConfig } from './types';
 
@@ -35,11 +36,6 @@ export const getSupabaseConfig = (): SupabaseConfig => {
     return defaultConfig;
 };
 
-export const saveSupabaseConfig = (config: SupabaseConfig) => {
-    localStorage.setItem(STORAGE_KEY_SUPABASE, JSON.stringify(config));
-    initSupabase();
-};
-
 export const initSupabase = () => {
     const config = getSupabaseConfig();
     
@@ -58,23 +54,6 @@ export const initSupabase = () => {
     }
 };
 
-export const testConnection = async (): Promise<boolean> => {
-    if (!supabase) initSupabase();
-    if (!supabase) return false;
-
-    try {
-        const { error } = await supabase.from('app_config').select('id').limit(1);
-        if (error && error.code !== 'PGRST116') { 
-            console.error("Connection Test Error:", JSON.stringify(error, null, 2));
-            return false; 
-        }
-        return true;
-    } catch (e) {
-        console.error('Supabase connection test failed:', e);
-        return false;
-    }
-};
-
 export const subscribeToRealtime = (onUpdate: () => void) => {
     if (!supabase) return;
 
@@ -82,11 +61,25 @@ export const subscribeToRealtime = (onUpdate: () => void) => {
         supabase.removeChannel(realtimeChannel);
     }
 
+    // Subscribe to all changes in the relevant tables
     realtimeChannel = supabase.channel('db-changes')
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'employees' }, () => onUpdate())
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'attendance_records' }, () => onUpdate())
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'app_config' }, () => onUpdate())
-        .subscribe();
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'employees' }, (payload) => {
+            console.log('Realtime change received: employees', payload);
+            onUpdate();
+        })
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'attendance_records' }, (payload) => {
+             console.log('Realtime change received: records', payload);
+             onUpdate();
+        })
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'app_config' }, (payload) => {
+             console.log('Realtime change received: config', payload);
+             onUpdate();
+        })
+        .subscribe((status) => {
+            if (status === 'SUBSCRIBED') {
+                console.log('Successfully subscribed to Realtime changes');
+            }
+        });
 };
 
 export const downloadAllData = async () => {
@@ -102,7 +95,6 @@ export const downloadAllData = async () => {
 
         if (empRes.error) throw new Error(`Employees sync error: ${JSON.stringify(empRes.error)}`);
         if (recRes.error) throw new Error(`Records sync error: ${JSON.stringify(recRes.error)}`);
-        if (confRes.error && confRes.error.code !== 'PGRST116') throw new Error(`Config sync error: ${JSON.stringify(confRes.error)}`);
         
         return {
             success: true,
@@ -111,12 +103,48 @@ export const downloadAllData = async () => {
             config: confRes.data?.config as AppConfig | null
         };
     } catch (err: any) {
-        const msg = err.message || JSON.stringify(err);
-        console.error('Error downloading data:', msg);
-        return { success: false, message: msg };
+        console.error('Error downloading data:', err.message);
+        return { success: false, message: err.message };
     }
 };
 
+// --- GRANULAR OPERATIONS (HIGH PERFORMANCE) ---
+
+export const upsertSingleEmployee = async (employee: Employee) => {
+    if (!supabase) return;
+    const { error } = await supabase.from('employees').upsert({
+        ...employee,
+        created_at: new Date().toISOString()
+    }, { onConflict: 'id' });
+    if (error) console.error("Error upserting employee:", error);
+};
+
+export const deleteSingleEmployee = async (id: string) => {
+    if (!supabase) return;
+    const { error } = await supabase.from('employees').delete().eq('id', id);
+    if (error) console.error("Error deleting employee:", error);
+};
+
+export const upsertSingleRecord = async (record: AttendanceRecord) => {
+    if (!supabase) return;
+    const { error } = await supabase.from('attendance_records').upsert({
+        ...record,
+        created_at: new Date().toISOString()
+    }, { onConflict: 'id' });
+    if (error) console.error("Error upserting record:", error);
+};
+
+export const upsertConfig = async (config: AppConfig) => {
+    if (!supabase) return;
+    const { error } = await supabase.from('app_config').upsert({ 
+        id: 1, 
+        config: config,
+        created_at: new Date().toISOString()
+    }, { onConflict: 'id' });
+    if (error) console.error("Error upserting config:", error);
+};
+
+// Kept for initial seed only
 export const uploadAllData = async (employees: Employee[], records: AttendanceRecord[], config: AppConfig) => {
     if (!supabase) initSupabase();
     if (!supabase) return { success: false, message: 'Not connected' };
@@ -125,48 +153,31 @@ export const uploadAllData = async (employees: Employee[], records: AttendanceRe
         const timestamp = new Date().toISOString();
 
         if (employees.length > 0) {
-            const empPayload = employees.map(e => ({
-                ...e,
-                created_at: timestamp
-            }));
-
-            const { error } = await supabase.from('employees').upsert(empPayload, { onConflict: 'id' });
-            if (error) {
-                console.error("Supabase Employees Upload Error:", JSON.stringify(error, null, 2));
-                throw new Error(`Employees upload failed: ${error.message}`);
-            }
+             const { error } = await supabase.from('employees').upsert(
+                 employees.map(e => ({...e, created_at: timestamp})), 
+                 { onConflict: 'id' }
+             );
+             if (error) throw error;
         }
         
         if (records.length > 0) {
-            const chunkSize = 100;
+            // Upload in chunks to avoid payload limits
+            const chunkSize = 50;
             for (let i = 0; i < records.length; i += chunkSize) {
-                const chunk = records.slice(i, i + chunkSize).map(r => ({
-                    ...r,
-                    created_at: timestamp
-                }));
+                const chunk = records.slice(i, i + chunkSize).map(r => ({...r, created_at: timestamp}));
                 const { error } = await supabase.from('attendance_records').upsert(chunk, { onConflict: 'id' });
-                if (error) {
-                    console.error("Supabase Records Upload Error:", JSON.stringify(error, null, 2));
-                    throw new Error(`Records upload failed: ${error.message}`);
-                }
+                if (error) throw error;
             }
         }
 
-        const { error } = await supabase.from('app_config').upsert({ 
+        await supabase.from('app_config').upsert({ 
             id: 1, 
             config: config,
             created_at: timestamp
-        }, { onConflict: 'id' });
-        
-        if (error) {
-             console.error("Supabase Config Upload Error:", JSON.stringify(error, null, 2));
-             throw new Error(`Config upload failed: ${error.message}`);
-        }
+        });
 
         return { success: true, message: 'تم رفع البيانات بنجاح' };
     } catch (err: any) {
-        const errorDetails = err.message || JSON.stringify(err);
-        console.error('Error uploading data (Catch):', errorDetails);
-        return { success: false, message: errorDetails };
+        return { success: false, message: err.message };
     }
 };

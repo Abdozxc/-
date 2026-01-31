@@ -1,8 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { Employee, AttendanceRecord, AppConfig, UserRole } from '../types';
 import SmartCalendar from './SmartCalendar';
-import { ArrowRight, Search, Calendar } from 'lucide-react';
-import { Permissions } from '../utils';
+import { ArrowRight, Search, CheckCircle2, Trash2 } from 'lucide-react';
+import { Permissions, getMonthDates } from '../utils';
 
 interface EmployeeManagerProps {
   employees: Employee[];
@@ -16,14 +16,13 @@ const EmployeeManager: React.FC<EmployeeManagerProps> = ({ employees, attendance
   const [selectedEmployee, setSelectedEmployee] = useState<Employee | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   
-  // Date Filtering State (Default to current YYYY-MM)
-  const [selectedMonth, setSelectedMonth] = useState(() => {
-      const now = new Date();
-      return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-  });
-
+  // Ref for focus management
+  const checkOutRef = useRef<HTMLInputElement>(null);
+  
   // Modal State
   const [editingDate, setEditingDate] = useState<string | null>(null);
+  const [lastFocusedDate, setLastFocusedDate] = useState<string | null>(null); // To restore focus after save
+
   const [editForm, setEditForm] = useState<{ checkIn: string; checkOut: string; status: string; earlyPermission: boolean }>({
       checkIn: '', checkOut: '', status: 'present', earlyPermission: false
   });
@@ -31,6 +30,7 @@ const EmployeeManager: React.FC<EmployeeManagerProps> = ({ employees, attendance
   const filteredEmployees = employees.filter(e => e.name.includes(searchTerm));
 
   const handleDayClick = (date: string, record: AttendanceRecord | undefined) => {
+      setLastFocusedDate(null); // Clear previous focus
       setEditingDate(date);
       setEditForm({
           checkIn: record?.checkIn || '',
@@ -54,6 +54,15 @@ const EmployeeManager: React.FC<EmployeeManagerProps> = ({ employees, attendance
       };
 
       onUpdateRecord(newRecord);
+      
+      // Auto-advance logic: Focus the NEXT day after saving
+      const currentYear = new Date().getFullYear();
+      const currentMonth = new Date().getMonth();
+      const dates = getMonthDates(currentYear, currentMonth);
+      const currentIndex = dates.indexOf(editingDate);
+      const nextDate = dates[currentIndex + 1] || editingDate; // Move to next day or stay if last
+
+      setLastFocusedDate(nextDate);
       setEditingDate(null);
   };
 
@@ -62,35 +71,16 @@ const EmployeeManager: React.FC<EmployeeManagerProps> = ({ employees, attendance
     
     // Check Permissions correctly via Utils
     const canEdit = Permissions.canEditAttendance(userRole);
-    
-    // Parse the selectedMonth state
-    const [yearStr, monthStr] = selectedMonth.split('-');
-    const year = parseInt(yearStr);
-    const month = parseInt(monthStr) - 1; // JS months are 0-indexed
 
     return (
       <div className="animate-slide-in-right">
-        <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
-            <button 
-                onClick={() => setSelectedEmployee(null)}
-                className="flex items-center gap-2 text-slate-500 hover:text-blue-600 dark:text-slate-400 dark:hover:text-blue-400 transition-colors"
-            >
-                <ArrowRight size={20} />
-                عودة للقائمة
-            </button>
-
-            {/* Month Filter for specific employee */}
-            <div className="flex items-center gap-2 bg-white dark:bg-slate-800 p-2 rounded-lg border border-slate-200 dark:border-slate-700 shadow-sm">
-                <Calendar size={18} className="text-slate-400" />
-                <span className="text-sm text-slate-600 dark:text-slate-300 pl-2 border-l border-slate-200 dark:border-slate-600">عرض شهر:</span>
-                <input 
-                    type="month" 
-                    value={selectedMonth}
-                    onChange={(e) => setSelectedMonth(e.target.value)}
-                    className="bg-transparent outline-none text-slate-700 dark:text-white text-sm font-medium"
-                />
-            </div>
-        </div>
+        <button 
+            onClick={() => setSelectedEmployee(null)}
+            className="flex items-center gap-2 text-slate-500 hover:text-blue-600 dark:text-slate-400 dark:hover:text-blue-400 mb-6 transition-colors"
+        >
+            <ArrowRight size={20} />
+            عودة للقائمة
+        </button>
 
         <div className="flex items-center justify-between mb-2">
             <div></div>
@@ -107,8 +97,7 @@ const EmployeeManager: React.FC<EmployeeManagerProps> = ({ employees, attendance
             config={config} 
             onEditDay={handleDayClick}
             readOnly={!canEdit}
-            year={year}
-            month={month}
+            lastFocusedDate={lastFocusedDate}
         />
 
         {editingDate && canEdit && (
@@ -120,21 +109,57 @@ const EmployeeManager: React.FC<EmployeeManagerProps> = ({ employees, attendance
                     <div className="space-y-4">
                         <div>
                             <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">وقت الحضور</label>
-                            <input 
-                                type="time" 
-                                value={editForm.checkIn}
-                                onChange={e => setEditForm({...editForm, checkIn: e.target.value})}
-                                className="w-full p-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none dir-ltr dark:bg-slate-700 dark:border-slate-600 dark:text-white"
-                            />
+                            <div className="flex gap-2">
+                                <input 
+                                    type="time" 
+                                    value={editForm.checkIn}
+                                    onChange={e => setEditForm({...editForm, checkIn: e.target.value})}
+                                    onKeyDown={(e) => {
+                                        if (e.key === 'Enter') {
+                                            e.preventDefault();
+                                            checkOutRef.current?.focus();
+                                        }
+                                    }}
+                                    autoFocus
+                                    className="flex-1 p-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none dir-ltr dark:bg-slate-700 dark:border-slate-600 dark:text-white"
+                                />
+                                {editForm.checkIn && (
+                                    <button 
+                                        onClick={() => setEditForm({ ...editForm, checkIn: '' })}
+                                        className="p-2 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors border border-transparent hover:border-red-100 dark:hover:border-red-900/30"
+                                        title="مسح وقت الحضور"
+                                    >
+                                        <Trash2 size={18} />
+                                    </button>
+                                )}
+                            </div>
                         </div>
                         <div>
                             <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">وقت الانصراف</label>
-                            <input 
-                                type="time" 
-                                value={editForm.checkOut}
-                                onChange={e => setEditForm({...editForm, checkOut: e.target.value})}
-                                className="w-full p-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none dir-ltr dark:bg-slate-700 dark:border-slate-600 dark:text-white"
-                            />
+                            <div className="flex gap-2">
+                                <input 
+                                    ref={checkOutRef}
+                                    type="time" 
+                                    value={editForm.checkOut}
+                                    onChange={e => setEditForm({...editForm, checkOut: e.target.value})}
+                                    onKeyDown={(e) => {
+                                        if (e.key === 'Enter') {
+                                            e.preventDefault();
+                                            handleSave();
+                                        }
+                                    }}
+                                    className="flex-1 p-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none dir-ltr dark:bg-slate-700 dark:border-slate-600 dark:text-white"
+                                />
+                                {editForm.checkOut && (
+                                    <button 
+                                        onClick={() => setEditForm({ ...editForm, checkOut: '' })}
+                                        className="p-2 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors border border-transparent hover:border-red-100 dark:hover:border-red-900/30"
+                                        title="مسح وقت الانصراف"
+                                    >
+                                        <Trash2 size={18} />
+                                    </button>
+                                )}
+                            </div>
                         </div>
                          
                          {/* Early Departure Permission Toggle */}
@@ -190,41 +215,51 @@ const EmployeeManager: React.FC<EmployeeManagerProps> = ({ employees, attendance
   }
 
   return (
-    <div className="space-y-6 animate-slide-up">
-       <div className="flex flex-col md:flex-row justify-between items-center gap-4 bg-white dark:bg-slate-800 p-6 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-700">
-          <div>
-            <h2 className="text-2xl font-bold text-slate-800 dark:text-white">إدارة الحضور</h2>
-            <p className="text-slate-500 dark:text-slate-400">حدد موظفاً لعرض أو تعديل سجل الحضور الخاص به.</p>
-          </div>
-          <div className="relative w-full md:w-64">
-             <Search className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
-             <input 
-                type="text" 
-                placeholder="بحث عن موظف..." 
-                value={searchTerm}
-                onChange={e => setSearchTerm(e.target.value)}
-                className="w-full pr-10 pl-4 py-2 border rounded-xl outline-none focus:ring-2 focus:ring-blue-500 bg-slate-50 dark:bg-slate-700 dark:border-slate-600 dark:text-white"
-             />
-          </div>
+    <div className="space-y-6 animate-fade-in">
+       <div className="flex flex-col md:flex-row justify-between items-center bg-white dark:bg-slate-800 p-6 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-700">
+           <div>
+               <h2 className="text-2xl font-bold text-slate-800 dark:text-white">سجل الحضور والانصراف</h2>
+               <p className="text-slate-500 dark:text-slate-400">عرض وتعديل سجلات الموظفين</p>
+           </div>
+           <div className="relative mt-4 md:mt-0 w-full md:w-auto">
+                <Search className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+                <input 
+                    type="text" 
+                    placeholder="بحث باسم الموظف..." 
+                    value={searchTerm}
+                    onChange={e => setSearchTerm(e.target.value)}
+                    className="w-full md:w-64 pr-10 pl-4 py-2 border rounded-xl outline-none focus:ring-2 focus:ring-blue-500 bg-slate-50 dark:bg-slate-700 dark:border-slate-600 dark:text-white"
+                />
+           </div>
        </div>
 
-       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-          {filteredEmployees.map((emp, idx) => (
-              <div 
-                key={emp.id}
-                onClick={() => setSelectedEmployee(emp)}
-                style={{ animationDelay: `${idx * 0.05}s` }}
-                className="bg-white dark:bg-slate-800 p-6 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-700 hover:shadow-md cursor-pointer transition-all hover:-translate-y-1 group animate-scale-in"
-              >
-                  <div className="flex items-center gap-4">
-                      <img src={emp.avatar} className="w-14 h-14 rounded-full border-2 border-white dark:border-slate-600 shadow-sm group-hover:scale-105 transition-transform object-cover" alt={emp.name} />
-                      <div>
-                          <h3 className="font-bold text-slate-800 dark:text-white group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">{emp.name}</h3>
-                          <p className="text-sm text-slate-500 dark:text-slate-400">{emp.position}</p>
-                      </div>
-                  </div>
-              </div>
-          ))}
+       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+           {filteredEmployees.map(emp => (
+               <div 
+                  key={emp.id} 
+                  onClick={() => setSelectedEmployee(emp)}
+                  className="bg-white dark:bg-slate-800 p-4 rounded-xl shadow-sm border border-slate-100 dark:border-slate-700 cursor-pointer hover:shadow-md hover:border-blue-200 dark:hover:border-blue-700 transition-all group"
+               >
+                   <div className="flex items-center gap-4">
+                       <img src={emp.avatar} alt={emp.name} className="w-14 h-14 rounded-full object-cover group-hover:scale-105 transition-transform" />
+                       <div>
+                           <h3 className="font-bold text-slate-800 dark:text-white group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">{emp.name}</h3>
+                           <p className="text-xs text-slate-500 dark:text-slate-400">{emp.position}</p>
+                           <div className="flex items-center gap-1 mt-2 text-xs text-slate-400">
+                               <span>{emp.department}</span>
+                           </div>
+                       </div>
+                       <div className="mr-auto text-slate-300 group-hover:text-blue-500 transition-colors">
+                           <ArrowRight size={20} className="transform rotate-180" />
+                       </div>
+                   </div>
+               </div>
+           ))}
+           {filteredEmployees.length === 0 && (
+               <div className="col-span-full text-center py-12 text-slate-400">
+                   لا يوجد موظفين مطابقين للبحث
+               </div>
+           )}
        </div>
     </div>
   );

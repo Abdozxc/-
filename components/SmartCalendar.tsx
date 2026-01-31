@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useRef, useEffect } from 'react';
 import { calculateDailyStats, formatTime12H, getMonthDates } from '../utils';
 import { AttendanceRecord, Employee, AppConfig } from '../types';
 import { Edit2, CheckCircle2 } from 'lucide-react';
@@ -9,17 +9,79 @@ interface SmartCalendarProps {
   config: AppConfig;
   onEditDay: (date: string, record: AttendanceRecord | undefined) => void;
   readOnly?: boolean;
-  // New props for filtering
-  year?: number;
-  month?: number; // 0-indexed (0 = Jan)
+  lastFocusedDate?: string | null; // New prop to restore focus
 }
 
-const SmartCalendar: React.FC<SmartCalendarProps> = ({ employee, records, config, onEditDay, readOnly, year, month }) => {
-  // Use props if provided, otherwise default to current date
-  const targetYear = year !== undefined ? year : new Date().getFullYear();
-  const targetMonth = month !== undefined ? month : new Date().getMonth();
+const SmartCalendar: React.FC<SmartCalendarProps> = ({ employee, records, config, onEditDay, readOnly, lastFocusedDate }) => {
+  const currentYear = new Date().getFullYear();
+  const currentMonth = new Date().getMonth();
+  const dates = getMonthDates(currentYear, currentMonth);
   
-  const dates = getMonthDates(targetYear, targetMonth);
+  // Refs for keyboard navigation
+  const dayRefs = useRef<(HTMLDivElement | null)[]>([]);
+
+  // Reset refs array when dates change
+  useEffect(() => {
+    dayRefs.current = dayRefs.current.slice(0, dates.length);
+  }, [dates]);
+
+  // Restore Focus Effect
+  useEffect(() => {
+      if (lastFocusedDate) {
+          const index = dates.indexOf(lastFocusedDate);
+          if (index !== -1 && dayRefs.current[index]) {
+               // Small timeout to ensure DOM is ready after modal removal
+               setTimeout(() => dayRefs.current[index]?.focus(), 50);
+          }
+      }
+  }, [lastFocusedDate, dates]);
+
+  const getGridColumns = () => {
+      if (typeof window === 'undefined') return 1;
+      const width = window.innerWidth;
+      if (width >= 1280) return 4; // xl
+      if (width >= 1024) return 3; // lg
+      if (width >= 768) return 2;  // md
+      return 1;
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent, index: number, date: string, record: AttendanceRecord | undefined) => {
+      if (readOnly) return;
+
+      const cols = getGridColumns();
+      const total = dates.length;
+      let nextIndex = index;
+
+      switch (e.key) {
+          case 'Enter':
+          case ' ':
+              e.preventDefault();
+              onEditDay(date, record);
+              return;
+          case 'ArrowLeft': // Next day in RTL
+              e.preventDefault();
+              nextIndex = index + 1;
+              break;
+          case 'ArrowRight': // Prev day in RTL
+              e.preventDefault();
+              nextIndex = index - 1;
+              break;
+          case 'ArrowDown': // Next row
+              e.preventDefault();
+              nextIndex = index + cols;
+              break;
+          case 'ArrowUp': // Prev row
+              e.preventDefault();
+              nextIndex = index - cols;
+              break;
+          default:
+              return;
+      }
+
+      if (nextIndex >= 0 && nextIndex < total) {
+          dayRefs.current[nextIndex]?.focus();
+      }
+  };
 
   return (
     <div className="space-y-6 animate-fade-in">
@@ -41,17 +103,20 @@ const SmartCalendar: React.FC<SmartCalendarProps> = ({ employee, records, config
           return (
             <div 
               key={date}
+              ref={el => { dayRefs.current[idx] = el }}
+              tabIndex={!readOnly ? 0 : -1}
+              onKeyDown={(e) => handleKeyDown(e, idx, date, record)}
               style={{ animationDelay: `${idx * 0.02}s` }}
               onClick={() => !readOnly && onEditDay(date, record)}
               className={`
-                relative p-4 rounded-xl border transition-all duration-300 group animate-scale-in
+                relative p-4 rounded-xl border transition-all duration-300 group animate-scale-in outline-none
                 ${stats.colorClass} 
                 dark:bg-opacity-10 dark:border-opacity-30
-                ${!readOnly ? 'cursor-pointer hover:shadow-md hover:-translate-y-1' : 'opacity-90'}
+                ${!readOnly ? 'cursor-pointer hover:shadow-md hover:-translate-y-1 focus:ring-2 focus:ring-blue-500 focus:shadow-lg focus:scale-[1.02]' : 'opacity-90'}
               `}
             >
               {!readOnly && (
-              <div className="absolute top-2 left-2 opacity-0 group-hover:opacity-100 transition-opacity">
+              <div className="absolute top-2 left-2 opacity-0 group-hover:opacity-100 group-focus:opacity-100 transition-opacity">
                  <Edit2 size={14} className="text-slate-500 dark:text-slate-300" />
               </div>
               )}
